@@ -1,9 +1,8 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch');
-const instagramGetUrl = require("instagram-url-direct");
 const axios = require('axios');
 const cheerio = require('cheerio');
+const puppeteer = require('puppeteer');
 const path = require('path');
 
 const app = express();
@@ -14,59 +13,123 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
+let browser = null;
+
+// Initialize browser
+async function initBrowser() {
+    if (!browser) {
+        browser = await puppeteer.launch({
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+    }
+    return browser;
+}
+
 // Custom headers for requests
 const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.5',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1'
+    'Connection': 'keep-alive'
 };
 
-// Utility function to extract video URL from webpage
-async function extractVideoUrl(url, platform) {
+async function extractFacebookVideo(url) {
     try {
-        console.log(`Attempting to extract ${platform} video from: ${url}`);
-        const response = await axios.get(url, { headers });
-        console.log(`Got response from ${platform}, status: ${response.status}`);
+        const browser = await initBrowser();
+        const page = await browser.newPage();
+        await page.setUserAgent(headers['User-Agent']);
         
-        const $ = cheerio.load(response.data);
-        let videoUrl = '';
-
-        if (platform === 'facebook') {
-            // Try multiple selectors for Facebook videos
-            videoUrl = $('meta[property="og:video:url"]').attr('content') ||
-                      $('meta[property="og:video"]').attr('content') ||
-                      $('meta[property="og:video:secure_url"]').attr('content') ||
-                      $('video').attr('src');
-                      
-            console.log('Found Facebook video URL:', videoUrl);
-        } else if (platform === 'twitter') {
-            // Try multiple selectors for Twitter videos
-            videoUrl = $('meta[property="og:video:url"]').attr('content') ||
-                      $('meta[property="og:video"]').attr('content') ||
-                      $('meta[property="twitter:player:stream"]').attr('content') ||
-                      $('video').attr('src');
-                      
-            console.log('Found Twitter video URL:', videoUrl);
-        }
-
-        if (!videoUrl) {
-            console.log(`No video URL found in ${platform} page`);
-            // Log all meta tags for debugging
-            $('meta').each((i, elem) => {
-                console.log(`Meta tag: ${$(elem).attr('property')} = ${$(elem).attr('content')}`);
-            });
-        }
-
-        return videoUrl;
+        // Navigate to the Facebook video page
+        await page.goto(url, { waitUntil: 'networkidle0' });
+        
+        // Wait for video element
+        await page.waitForSelector('video');
+        
+        // Extract video information
+        const videoData = await page.evaluate(() => {
+            const video = document.querySelector('video');
+            const videoUrl = video ? video.src : null;
+            const title = document.querySelector('title').innerText;
+            const thumbnail = document.querySelector('meta[property="og:image"]')?.content;
+            
+            return {
+                url: videoUrl,
+                title: title,
+                thumbnail: thumbnail
+            };
+        });
+        
+        await page.close();
+        return videoData;
     } catch (error) {
-        console.error(`Error extracting ${platform} video URL:`, error.message);
-        if (error.response) {
-            console.error('Response status:', error.response.status);
-            console.error('Response headers:', error.response.headers);
-        }
-        return null;
+        console.error('Facebook extraction error:', error);
+        throw error;
+    }
+}
+
+async function extractInstagramVideo(url) {
+    try {
+        const browser = await initBrowser();
+        const page = await browser.newPage();
+        await page.setUserAgent(headers['User-Agent']);
+        
+        // Navigate to the Instagram post
+        await page.goto(url, { waitUntil: 'networkidle0' });
+        
+        // Wait for video element
+        await page.waitForSelector('video');
+        
+        // Extract video information
+        const videoData = await page.evaluate(() => {
+            const video = document.querySelector('video');
+            const videoUrl = video ? video.src : null;
+            const thumbnail = document.querySelector('meta[property="og:image"]')?.content;
+            
+            return {
+                url: videoUrl,
+                title: 'Instagram Video',
+                thumbnail: thumbnail
+            };
+        });
+        
+        await page.close();
+        return videoData;
+    } catch (error) {
+        console.error('Instagram extraction error:', error);
+        throw error;
+    }
+}
+
+async function extractTwitterVideo(url) {
+    try {
+        const browser = await initBrowser();
+        const page = await browser.newPage();
+        await page.setUserAgent(headers['User-Agent']);
+        
+        // Navigate to the Twitter post
+        await page.goto(url, { waitUntil: 'networkidle0' });
+        
+        // Wait for video element
+        await page.waitForSelector('video');
+        
+        // Extract video information
+        const videoData = await page.evaluate(() => {
+            const video = document.querySelector('video');
+            const videoUrl = video ? video.src : null;
+            const thumbnail = document.querySelector('meta[property="og:image"]')?.content;
+            
+            return {
+                url: videoUrl,
+                title: 'X Video',
+                thumbnail: thumbnail
+            };
+        });
+        
+        await page.close();
+        return videoData;
+    } catch (error) {
+        console.error('Twitter extraction error:', error);
+        throw error;
     }
 }
 
@@ -85,12 +148,14 @@ app.post('/api/parse', async (req, res) => {
 
         if (url.includes('facebook.com')) {
             try {
-                const videoUrl = await extractVideoUrl(url, 'facebook');
-                videoInfo.title = 'Facebook Video';
-                videoInfo.platform = 'facebook';
-                videoInfo.directUrl = videoUrl;
-                const $ = cheerio.load((await axios.get(url, { headers })).data);
-                videoInfo.thumbnail = $('meta[property="og:image"]').attr('content');
+                const data = await extractFacebookVideo(url);
+                videoInfo = {
+                    ...videoInfo,
+                    title: data.title || 'Facebook Video',
+                    platform: 'facebook',
+                    directUrl: data.url,
+                    thumbnail: data.thumbnail
+                };
             } catch (err) {
                 console.error('Facebook parse error:', err.message);
                 videoInfo.title = 'Facebook Video';
@@ -98,19 +163,14 @@ app.post('/api/parse', async (req, res) => {
             }
         } else if (url.includes('instagram.com')) {
             try {
-                console.log('Fetching Instagram video info');
-                const igResult = await instagramGetUrl(url);
-                console.log('Instagram API response:', igResult);
-                
-                if (igResult.url_list && igResult.url_list.length > 0) {
-                    videoInfo.title = 'Instagram Video';
-                    videoInfo.platform = 'instagram';
-                    videoInfo.directUrl = igResult.url_list[0];
-                    videoInfo.thumbnail = igResult.thumbnail_url;
-                    console.log('Found Instagram video URL:', videoInfo.directUrl);
-                } else {
-                    console.log('No Instagram video URLs found');
-                }
+                const data = await extractInstagramVideo(url);
+                videoInfo = {
+                    ...videoInfo,
+                    title: data.title || 'Instagram Video',
+                    platform: 'instagram',
+                    directUrl: data.url,
+                    thumbnail: data.thumbnail
+                };
             } catch (err) {
                 console.error('Instagram parse error:', err.message);
                 videoInfo.title = 'Instagram Video';
@@ -118,10 +178,14 @@ app.post('/api/parse', async (req, res) => {
             }
         } else if (url.includes('twitter.com') || url.includes('x.com')) {
             try {
-                const videoUrl = await extractVideoUrl(url, 'twitter');
-                videoInfo.title = 'X Video';
-                videoInfo.platform = 'twitter';
-                videoInfo.directUrl = videoUrl;
+                const data = await extractTwitterVideo(url);
+                videoInfo = {
+                    ...videoInfo,
+                    title: data.title || 'X Video',
+                    platform: 'twitter',
+                    directUrl: data.url,
+                    thumbnail: data.thumbnail
+                };
             } catch (err) {
                 console.error('Twitter parse error:', err.message);
                 videoInfo.title = 'X Video';
@@ -145,90 +209,71 @@ app.post('/api/download', async (req, res) => {
         
         if (url.includes('facebook.com')) {
             try {
-                videoUrl = await extractVideoUrl(url, 'facebook');
+                const data = await extractFacebookVideo(url);
+                videoUrl = data.url;
+                
                 if (!videoUrl) {
-                    console.error('No Facebook video URL found');
                     throw new Error('No downloadable URL found');
                 }
 
-                console.log('Attempting to download Facebook video from:', videoUrl);
                 const response = await axios({
                     method: 'GET',
                     url: videoUrl,
                     responseType: 'stream',
-                    headers: headers,
-                    maxRedirects: 5
+                    headers: headers
                 });
 
-                console.log('Facebook video download response headers:', response.headers);
                 res.setHeader('Content-Type', 'video/mp4');
                 res.setHeader('Content-Disposition', 'attachment; filename=facebook_video.mp4');
                 response.data.pipe(res);
             } catch (err) {
                 console.error('Facebook download error:', err.message);
-                if (err.response) {
-                    console.error('Response status:', err.response.status);
-                    console.error('Response headers:', err.response.headers);
-                }
                 res.status(500).json({ error: 'Failed to download Facebook video' });
             }
         } else if (url.includes('instagram.com')) {
             try {
-                console.log('Fetching Instagram video URL');
-                const igResult = await instagramGetUrl(url);
-                if (igResult.url_list && igResult.url_list.length > 0) {
-                    console.log('Found Instagram video URL:', igResult.url_list[0]);
-                    const response = await axios({
-                        method: 'GET',
-                        url: igResult.url_list[0],
-                        responseType: 'stream',
-                        headers: headers,
-                        maxRedirects: 5
-                    });
-
-                    console.log('Instagram video download response headers:', response.headers);
-                    res.setHeader('Content-Type', 'video/mp4');
-                    res.setHeader('Content-Disposition', 'attachment; filename=instagram_video.mp4');
-                    response.data.pipe(res);
-                } else {
-                    console.error('No Instagram video URLs found');
-                    throw new Error('No downloadable URL found');
-                }
-            } catch (err) {
-                console.error('Instagram download error:', err.message);
-                if (err.response) {
-                    console.error('Response status:', err.response.status);
-                    console.error('Response headers:', err.response.headers);
-                }
-                res.status(500).json({ error: 'Failed to download Instagram video' });
-            }
-        } else if (url.includes('twitter.com') || url.includes('x.com')) {
-            try {
-                videoUrl = await extractVideoUrl(url, 'twitter');
+                const data = await extractInstagramVideo(url);
+                videoUrl = data.url;
+                
                 if (!videoUrl) {
-                    console.error('No Twitter video URL found');
                     throw new Error('No downloadable URL found');
                 }
 
-                console.log('Attempting to download Twitter video from:', videoUrl);
                 const response = await axios({
                     method: 'GET',
                     url: videoUrl,
                     responseType: 'stream',
-                    headers: headers,
-                    maxRedirects: 5
+                    headers: headers
                 });
 
-                console.log('Twitter video download response headers:', response.headers);
+                res.setHeader('Content-Type', 'video/mp4');
+                res.setHeader('Content-Disposition', 'attachment; filename=instagram_video.mp4');
+                response.data.pipe(res);
+            } catch (err) {
+                console.error('Instagram download error:', err.message);
+                res.status(500).json({ error: 'Failed to download Instagram video' });
+            }
+        } else if (url.includes('twitter.com') || url.includes('x.com')) {
+            try {
+                const data = await extractTwitterVideo(url);
+                videoUrl = data.url;
+                
+                if (!videoUrl) {
+                    throw new Error('No downloadable URL found');
+                }
+
+                const response = await axios({
+                    method: 'GET',
+                    url: videoUrl,
+                    responseType: 'stream',
+                    headers: headers
+                });
+
                 res.setHeader('Content-Type', 'video/mp4');
                 res.setHeader('Content-Disposition', 'attachment; filename=twitter_video.mp4');
                 response.data.pipe(res);
             } catch (err) {
                 console.error('Twitter download error:', err.message);
-                if (err.response) {
-                    console.error('Response status:', err.response.status);
-                    console.error('Response headers:', err.response.headers);
-                }
                 res.status(500).json({ error: 'Failed to download Twitter video' });
             }
         } else {
@@ -236,12 +281,16 @@ app.post('/api/download', async (req, res) => {
         }
     } catch (error) {
         console.error('Download error:', error.message);
-        if (error.response) {
-            console.error('Response status:', error.response.status);
-            console.error('Response headers:', error.response.headers);
-        }
         res.status(500).json({ error: 'Failed to download video' });
     }
+});
+
+// Cleanup on server shutdown
+process.on('SIGINT', async () => {
+    if (browser) {
+        await browser.close();
+    }
+    process.exit();
 });
 
 // Error handling middleware
@@ -251,6 +300,13 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(port, () => {
+app.listen(port, async () => {
     console.log(`Server running at http://localhost:${port}`);
+    // Initialize browser on server start
+    try {
+        await initBrowser();
+        console.log('Browser initialized successfully');
+    } catch (error) {
+        console.error('Failed to initialize browser:', error);
+    }
 });
