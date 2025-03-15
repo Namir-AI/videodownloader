@@ -3,12 +3,15 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 const instagramGetUrl = require("instagram-url-direct");
 const fbDownloader = require('fb-video-downloader');
-const twitterUrlDirect = require('twitter-url-direct');
+const TwitterDL = require('twitter-dl-api');
 const axios = require('axios');
 const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Initialize Twitter downloader
+const twitterDL = new TwitterDL();
 
 // Middleware
 app.use(cors());
@@ -56,8 +59,8 @@ app.post('/api/parse', async (req, res) => {
             }
         } else if (url.includes('twitter.com') || url.includes('x.com')) {
             try {
-                const twitterInfo = await twitterUrlDirect(url);
-                videoInfo.title = 'X Video';
+                const twitterInfo = await twitterDL.getInfo(url);
+                videoInfo.title = twitterInfo.title || 'X Video';
                 videoInfo.platform = 'twitter';
                 videoInfo.quality = twitterInfo.quality || 'HD';
                 videoInfo.thumbnail = twitterInfo.thumbnail;
@@ -123,8 +126,8 @@ app.post('/api/download', async (req, res) => {
             }
         } else if (url.includes('twitter.com') || url.includes('x.com')) {
             try {
-                const twitterInfo = await twitterUrlDirect(url);
-                const videoUrl = twitterInfo.download_url;
+                const twitterInfo = await twitterDL.getInfo(url);
+                const videoUrl = twitterInfo.videos?.[0]?.url;
 
                 if (!videoUrl) {
                     throw new Error('No downloadable URL found');
