@@ -1,12 +1,14 @@
 const express = require('express');
 const cors = require('cors');
-const ytdl = require('ytdl-core');
 const fetch = require('node-fetch');
 const instagramGetUrl = require("instagram-url-direct");
+const fbDownloader = require('fb-video-downloader');
+const twitterUrlDirect = require('twitter-url-direct');
+const axios = require('axios');
 const path = require('path');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
@@ -22,25 +24,48 @@ app.post('/api/parse', async (req, res) => {
         let videoInfo = {
             title: 'Unknown',
             duration: 'Unknown',
-            quality: 'HD'
+            quality: 'HD',
+            url: url
         };
 
         if (url.includes('facebook.com')) {
-            // Facebook video parsing logic
-            videoInfo.title = 'Facebook Video';
-            videoInfo.platform = 'facebook';
+            try {
+                const fbInfo = await fbDownloader.getInfo(url);
+                videoInfo.title = fbInfo.title || 'Facebook Video';
+                videoInfo.platform = 'facebook';
+                videoInfo.thumbnail = fbInfo.thumbnail;
+                videoInfo.quality = fbInfo.quality || 'HD';
+            } catch (err) {
+                console.error('Facebook parse error:', err);
+                videoInfo.title = 'Facebook Video';
+                videoInfo.platform = 'facebook';
+            }
         } else if (url.includes('instagram.com')) {
-            // Instagram video parsing logic
-            const igResult = await instagramGetUrl(url);
-            if (igResult.url_list.length > 0) {
+            try {
+                const igResult = await instagramGetUrl(url);
+                if (igResult.url_list.length > 0) {
+                    videoInfo.title = 'Instagram Video';
+                    videoInfo.platform = 'instagram';
+                    videoInfo.directUrl = igResult.url_list[0];
+                    videoInfo.thumbnail = igResult.thumbnail_url;
+                }
+            } catch (err) {
+                console.error('Instagram parse error:', err);
                 videoInfo.title = 'Instagram Video';
                 videoInfo.platform = 'instagram';
-                videoInfo.directUrl = igResult.url_list[0];
             }
         } else if (url.includes('twitter.com') || url.includes('x.com')) {
-            // X/Twitter video parsing logic
-            videoInfo.title = 'X Video';
-            videoInfo.platform = 'twitter';
+            try {
+                const twitterInfo = await twitterUrlDirect(url);
+                videoInfo.title = 'X Video';
+                videoInfo.platform = 'twitter';
+                videoInfo.quality = twitterInfo.quality || 'HD';
+                videoInfo.thumbnail = twitterInfo.thumbnail;
+            } catch (err) {
+                console.error('Twitter parse error:', err);
+                videoInfo.title = 'X Video';
+                videoInfo.platform = 'twitter';
+            }
         }
 
         res.json(videoInfo);
@@ -54,25 +79,70 @@ app.post('/api/download', async (req, res) => {
     try {
         const { url } = req.body;
         
-        // Handle different platforms
         if (url.includes('facebook.com')) {
-            // Facebook download logic
-            // Note: Actual implementation would require Facebook API or a specialized library
-            res.status(501).json({ error: 'Facebook downloads temporarily unavailable' });
+            try {
+                const fbInfo = await fbDownloader.getInfo(url);
+                const videoUrl = fbInfo.download_url || fbInfo.sd_url || fbInfo.hd_url;
+                
+                if (!videoUrl) {
+                    throw new Error('No downloadable URL found');
+                }
+
+                const response = await axios({
+                    method: 'GET',
+                    url: videoUrl,
+                    responseType: 'stream'
+                });
+
+                res.setHeader('Content-Type', 'video/mp4');
+                res.setHeader('Content-Disposition', 'attachment; filename=facebook_video.mp4');
+                response.data.pipe(res);
+            } catch (err) {
+                console.error('Facebook download error:', err);
+                res.status(500).json({ error: 'Failed to download Facebook video' });
+            }
         } else if (url.includes('instagram.com')) {
-            // Instagram download logic
-            const igResult = await instagramGetUrl(url);
-            if (igResult.url_list.length > 0) {
-                const videoResponse = await fetch(igResult.url_list[0]);
-                const buffer = await videoResponse.buffer();
-                res.send(buffer);
-            } else {
-                throw new Error('No downloadable URL found');
+            try {
+                const igResult = await instagramGetUrl(url);
+                if (igResult.url_list.length > 0) {
+                    const response = await axios({
+                        method: 'GET',
+                        url: igResult.url_list[0],
+                        responseType: 'stream'
+                    });
+
+                    res.setHeader('Content-Type', 'video/mp4');
+                    res.setHeader('Content-Disposition', 'attachment; filename=instagram_video.mp4');
+                    response.data.pipe(res);
+                } else {
+                    throw new Error('No downloadable URL found');
+                }
+            } catch (err) {
+                console.error('Instagram download error:', err);
+                res.status(500).json({ error: 'Failed to download Instagram video' });
             }
         } else if (url.includes('twitter.com') || url.includes('x.com')) {
-            // X/Twitter download logic
-            // Note: Actual implementation would require Twitter API or a specialized library
-            res.status(501).json({ error: 'X/Twitter downloads temporarily unavailable' });
+            try {
+                const twitterInfo = await twitterUrlDirect(url);
+                const videoUrl = twitterInfo.download_url;
+
+                if (!videoUrl) {
+                    throw new Error('No downloadable URL found');
+                }
+
+                const response = await axios({
+                    method: 'GET',
+                    url: videoUrl,
+                    responseType: 'stream'
+                });
+
+                res.setHeader('Content-Type', 'video/mp4');
+                res.setHeader('Content-Disposition', 'attachment; filename=twitter_video.mp4');
+                response.data.pipe(res);
+            } catch (err) {
+                console.error('Twitter download error:', err);
+                res.status(500).json({ error: 'Failed to download Twitter video' });
+            }
         } else {
             res.status(400).json({ error: 'Unsupported platform' });
         }
