@@ -1,0 +1,84 @@
+/* Main Styles */
+body {
+    background-color: #f8f9fa;
+}
+
+/* Ad Containers */
+.ad-placeholder {
+    background-color: #f8f9fa;
+    border: 1px dashed #dee2e6;
+    border-radius: 4px;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 10px 0;
+}
+
+/* URL Input Section */
+.url-input-section {
+    background-color: #ffffff;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+/* Progress Bar */
+.progress {
+    height: 20px;
+}
+
+/* Video Info Card */
+.video-info {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .container {
+        padding: 10px;
+    }
+    
+    .url-input-section {
+        padding: 15px;
+    }
+    
+    .btn-lg {
+        padding: 8px 16px;
+        font-size: 16px;
+    }
+}
+
+/* Button States */
+.btn-primary:disabled {
+    cursor: not-allowed;
+}
+
+/* Loading Animation */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+.loading {
+    animation: pulse 1.5s infinite;
+}
+
+/* Video Details Section */
+#videoDetails {
+    margin: 15px 0;
+    padding: 10px;
+    background-color: #ffffff;
+    border-radius: 4px;
+}
+
+/* Error Message Styling */
+.error-message {
+    color: #dc3545;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 4px;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+}
