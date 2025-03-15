@@ -15,11 +15,19 @@ app.use(express.static(path.join(__dirname)));
 
 let browser = null;
 
-// Initialize browser
+// Initialize browser with proper configuration for server environment
 async function initBrowser() {
     if (!browser) {
         browser = await puppeteer.launch({
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            headless: 'new',
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu',
+                '--window-size=1920x1080'
+            ]
         });
     }
     return browser;
