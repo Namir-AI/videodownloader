@@ -1,6 +1,23 @@
+# Dependency directories
 node_modules/
-.env
-.DS_Store
+
+# Logs
+logs/
+*.log
 npm-debug.log*
+
+# Environment variables
+.env
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
 yarn-debug.log*
 yarn-error.log*
